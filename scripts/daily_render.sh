@@ -2,26 +2,30 @@
 set -euo pipefail
 
 # =========================================================
-# InkTime 每日渲染脚本（cron / venv / 防并发）
+# InkTime 每日渲染脚本
 # =========================================================
 
-# ====== 路径配置（自行修改项目路径和python路径） ======
-PROJECT_DIR="/path/to/inktime/InkTime"
+# 修改为你的项目目录
+PROJECT_DIR="/path/to/inktime"
+
 VENV_DIR="$PROJECT_DIR/venv"
 PYTHON_BIN="$VENV_DIR/bin/python"
 LOG_DIR="$PROJECT_DIR/logs"
-LOCK_FILE="/tmp/inktime_render.lock"
-# =======================================
 
-mkdir -p "$LOG_DIR"
+LOCK_DIR="$PROJECT_DIR/tmp/inktime_render.lockdir"
 
+mkdir -p "$LOG_DIR" "$PROJECT_DIR/tmp"
 cd "$PROJECT_DIR"
 
-exec 9>"$LOCK_FILE"
-if ! flock -n 9; then
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
   echo "[$(date '+%F %T')] another render is running, skip." >> "$LOG_DIR/render.log"
   exit 0
 fi
+
+cleanup() {
+  rmdir "$LOCK_DIR" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
 
 echo "[$(date '+%F %T')] render start" >> "$LOG_DIR/render.log"
 

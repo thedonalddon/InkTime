@@ -10,6 +10,8 @@ import sqlite3
 import json
 import html
 import config as cfg
+from io import BytesIO
+import render_daily_photo as rdp
 
 ROOT_DIR = Path(__file__).resolve().parent
 
@@ -163,6 +165,50 @@ def load_sim_rows():
     conn.close()
     return rows
 
+def get_photo_meta_by_path(abs_path: str):
+    """
+    从 DB 找到渲染需要的字段：date/side/lat/lon/city。
+    abs_path 必须是数据库里 photo_scores.path 的原值（通常是绝对路径）。
+    """
+    if not DB_PATH.exists():
+        return None
+
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    row = c.execute(
+        """
+        SELECT path,
+               exif_json,
+               side_caption,
+               memory_score,
+               exif_gps_lat,
+               exif_gps_lon,
+               exif_city
+        FROM photo_scores
+        WHERE path = ?
+        LIMIT 1
+        """,
+        (abs_path,),
+    ).fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    path, exif_json, side_caption, memory_score, gps_lat, gps_lon, exif_city = row
+    date_str = extract_date_from_exif(exif_json)
+    if not date_str:
+        return None
+
+    return {
+        "path": str(path),
+        "date": date_str,
+        "side": side_caption or "",
+        "memory": float(memory_score) if memory_score is not None else None,
+        "lat": gps_lat,
+        "lon": gps_lon,
+        "city": exif_city or "",
+    }
 
 def summarize_exif(exif_json: str | None) -> str:
     if not exif_json:
@@ -1277,58 +1323,22 @@ def build_simulator_html(sim_rows, selected_img: str = ""):
 
       const img = new Image();
       img.onload = function() {{
-        const textAreaHeight = 100;
-        const imgAreaWidth = canvas.width;
-        const imgAreaHeight = canvas.height - textAreaHeight;
-
-        const scale = Math.max(imgAreaWidth / img.width, imgAreaHeight / img.height);
-        const drawW = img.width * scale;
-        const drawH = img.height * scale;
-        const dx = (imgAreaWidth - drawW) / 2;
-        const dy = (imgAreaHeight - drawH) / 2;
-
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(0, 0, imgAreaWidth, imgAreaHeight);
-        ctx.clip();
-        ctx.drawImage(img, dx, dy, drawW, drawH);
-        ctx.restore();
-
-        const paddingX = 24;
-        const textAreaTop = canvas.height - textAreaHeight + 10;
-        const textAreaWidth = canvas.width - 2 * paddingX;
-
-        ctx.fillStyle = '#000';
-        ctx.textBaseline = 'top';
-
-        ctx.font = 'bold 22px sans-serif';
-        wrapText(ctx, photo.side || '', paddingX, textAreaTop, textAreaWidth, 24, 2);
-
-        const dateDisplay = formatDateDisplay(photo.date);
-        const locDisplay = formatLocation(photo.lat, photo.lon, photo.city);
-
-        ctx.font = '16px sans-serif';
-        const secondLineY = textAreaTop + 54;
-        ctx.fillText(dateDisplay, paddingX, secondLineY);
-
-        const locWidth = ctx.measureText(locDisplay).width;
-        let locX = paddingX + textAreaWidth - locWidth;
-        if (locX < paddingX) locX = paddingX;
-        ctx.fillText(locDisplay, locX, secondLineY);
-
-        applyFourColorDither();
-      }};
+          canvas.width = 480;
+          canvas.height = 800;
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, 480, 800);
+        }};
       img.onerror = function() {{
         statusLine.textContent = '图片加载失败：' + photo.path;
       }};
-      img.src = photo.path;
+      img.src = '/sim_render?img=' + encodeURIComponent(photo.path);
     }}
 
     function pickPhotoFromDate(date) {{
       const arr = byDate.get(date) || [];
       if (!arr.length) return null;
 
-      const THRESHOLD = 60;
+      const THRESHOLD = {float(getattr(cfg, "MEMORY_THRESHOLD", 70.0) or 70.0)};
       const candidates = arr.filter(p => p.memory != null && p.memory > THRESHOLD);
       if (candidates.length > 0) {{
         const idx = Math.floor(Math.random() * candidates.length);
@@ -1478,6 +1488,46 @@ def images(subpath: str):
         abort(400)
     return _send_static_file(p)
 
+@app.get("/sim_render")
+def sim_render():
+    _require_webui_enabled()
+
+    img_uri = request.args.get("img", "")
+    if not img_uri or not img_uri.startswith("/images/"):
+        abort(400)
+
+    subpath = img_uri[len("/images/"):]
+    try:
+        p = _safe_join(IMAGE_DIR, subpath)
+    except Exception:
+        abort(400)
+
+    if not p.exists() or not p.is_file():
+        abort(404)
+
+    meta = get_photo_meta_by_path(str(p))
+    if meta is None:
+        # 兜底：DB 没命中就渲染纯图（不建议长期这样）
+        meta = {
+            "path": str(p),
+            "date": "",
+            "side": "",
+            "memory": None,
+            "lat": None,
+            "lon": None,
+            "city": "",
+        }
+
+    try:
+        img = rdp.render_image(meta)
+        img_dithered = rdp.apply_four_color_dither(img)
+
+        bio = BytesIO()
+        img_dithered.save(bio, format="PNG")
+        bio.seek(0)
+        return send_file(bio, mimetype="image/png", as_attachment=False)
+    except Exception:
+        abort(500)
 
 @app.get("/static/inktime/<key>/photo_<int:idx>.bin")
 def esp_photo(key: str, idx: int):

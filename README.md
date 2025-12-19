@@ -63,7 +63,8 @@ VLM 模型接口 ```API_URL``` ```MODEL_NAME```
 InkTime 使用 OpenAI 接口（LM Studio / 其它兼容服务均可）。
 
 为防止照片隐私泄露，建议修改```DOWNLOAD_KEY```，为 ESP32 下载路径加一个随机前缀作为密钥。   
-同时，请同步修改```esp32/ink-display-7C-photo/ink-display-7C-photo.ino```固件中的```DAILY_PHOTO_PATH_PREFIX```字段。
+同时，请同步修改```esp32/ink-display-7C-photo/ink-display-7C-photo.ino```固件中的```DAILY_PHOTO_PATH_PREFIX```字段。  
+注意，这不是“加密”，只是一个简单的验证路径口令。公网部署建议加 HTTPS/反代鉴权，或只允许内网访问。
 
 ## 分析照片
 分析照片前，请先确保：
@@ -83,9 +84,9 @@ InkTime 使用 OpenAI 接口（LM Studio / 其它兼容服务均可）。
 
 图片数据会保存在```photos.db```中（SQLite数据库）。
 
-你可以修改```analyze_photos.py```中的提示词，以微调模型的评价标准。
+请自行修改```analyze_photos.py```中的提示词，以调整模型的评价标准和文案风格。
 
-程序可以断点续跑，已处理过的照片信息不会重复分析，你可以分几天分析完你的整个相册。
+程序可以断点续跑，已处理过的照片信息不会重复分析。你可以分几天分析完你的整个相册。
 
 *请根据你拥有的算力选择合适的模型，作者使用的 qwen3-vl-30b 已经能取得相当不错的文案。*
 
