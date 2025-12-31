@@ -229,3 +229,12 @@ SW3 / SW4: 备用 GPIO，以防未来需要添加的功能。如无需要，可�
 - 若下载超时（默认 60s），也会进入长休眠，避免异常耗电。
 - 在任意时候，按下 RESET 键，会强制重启并马上拉取、刷新一次图片。
 - 长休眠待机电流 ＜ 1mA，如使用 2 节 18650 电池，5000mAh 约可实现半年续航。
+
+## 相关项目
+- ESP32 固件依赖 GxEPD2 © ZinggJM（GPL-3.0）：https://github.com/ZinggJM/GxEPD2  
+  如对外分发编译后的固件，请同时遵守 GPL-3.0。
+
+
+- 项目中的离线中文城市名索引，基于 GeoNames 数据制作：  
+GeoNames © GeoNames contributors, CC BY 4.0  
+https://www.geonames.org/
